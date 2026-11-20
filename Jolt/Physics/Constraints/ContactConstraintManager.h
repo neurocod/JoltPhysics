@@ -167,7 +167,8 @@ public:
 		uint					mNumContactPoints;													///< Number of contact points of the manifold
 	};
 
-	/// The tangents along which the friction of a contact with normal inWorldSpaceNormal acts, as every contact constraint builds them.
+	/// The tangents along which the friction of a contact with normal inWorldSpaceNormal acts: a copy of what CreateConstraint builds them from, which is left untouched
+	/// so the solver stays byte for byte upstream's. Compiled in the same file with the same flags as CreateConstraint; review this copy against it when rebasing.
 	static JPH_INLINE void		sGetFrictionTangents(Vec3Arg inWorldSpaceNormal, Vec3 &outTangent1, Vec3 &outTangent2)
 	{
 		outTangent1 = inWorldSpaceNormal.GetNormalizedPerpendicular();
@@ -179,8 +180,10 @@ public:
 	/// @param inKey The manifold as the ContactListener::OnContactAdded / OnContactPersisted callback of the last step reported it: { inBody1.GetID(), inManifold.mSubShapeID1, inBody2.GetID(), inManifold.mSubShapeID2 }.
 	/// @param inWorldSpaceNormal inManifold.mWorldSpaceNormal of that same callback, the normal the solver used. The cache keeps the normal only in body 2's local space and body 2 has moved since, so it cannot be rebuilt from the cache exactly.
 	/// @param outImpulse Receives the impulse when the function returns true.
-	/// @return False when the cache holds no solved manifold under inKey: the contact constraint buffer was full (EPhysicsUpdateError::ContactConstraintsFull) or the contact cache was, or the contact was only found by continuous collision detection (EMotionQuality::LinearCast), whose impulse is applied outside the cache.
-	/// A manifold whose contact was not solved (a sensor, or both inverse mass scales zero) is cached with zero impulses and returns true.
+	/// @return False when the cache holds no manifold with contact points under inKey: a new contact the contact constraint buffer had no room for, a full contact cache, or a contact only found by continuous collision detection (EMotionQuality::LinearCast), whose impulse is applied outside the cache.
+	/// STALE IMPULSES: a contact carried over from the previous step's cache (the body pair moved too little to collide it again) keeps the previous step's impulses when it gets no constraint this step,
+	/// because the contact constraint buffer is full (PhysicsSystem::Update returns EPhysicsUpdateError::ContactConstraintsFull) or it is not solved (a sensor, or both inverse mass scales zero), and this function returns true for it.
+	/// A caller that needs this step's impulse must therefore discard the step when Update reported ContactConstraintsFull, and not ask about pairs that are not solved.
 	bool						GetContactImpulse(const SubShapeIDPair &inKey, Vec3Arg inWorldSpaceNormal, ContactImpulse &outImpulse) const;
 
 	/// Get how many manifolds the last simulation step cached for a body pair (in either order), so that a caller of GetContactImpulse can check that it asked for all of them.

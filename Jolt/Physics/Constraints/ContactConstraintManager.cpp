@@ -818,10 +818,9 @@ JPH_INLINE ContactConstraintManager::ContactConstraint<Type1, Type2> *ContactCon
 	constraint->mBody2 = &inBody2;
 	constraint->mSortKey = inSortKey;
 	inWorldSpaceNormal.StoreFloat3(&constraint->mWorldSpaceNormal);
-	Vec3 tangent1, tangent2;
-	sGetFrictionTangents(inWorldSpaceNormal, tangent1, tangent2);
+	Vec3 tangent1 = inWorldSpaceNormal.GetNormalizedPerpendicular();
 	tangent1.StoreFloat3(&constraint->mWorldSpaceTangent1);
-	tangent2.StoreFloat3(&constraint->mWorldSpaceTangent2);
+	inWorldSpaceNormal.Cross(tangent1).StoreFloat3(&constraint->mWorldSpaceTangent2);
 	constraint->mCombinedFriction = inSettings.mCombinedFriction;
 	constraint->mInvInertiaScale1 = inSettings.mInvInertiaScale1;
 	constraint->mInvInertiaScale2 = inSettings.mInvInertiaScale2;
