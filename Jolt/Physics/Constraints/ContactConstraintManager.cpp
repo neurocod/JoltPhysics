@@ -818,9 +818,10 @@ JPH_INLINE ContactConstraintManager::ContactConstraint<Type1, Type2> *ContactCon
 	constraint->mBody2 = &inBody2;
 	constraint->mSortKey = inSortKey;
 	inWorldSpaceNormal.StoreFloat3(&constraint->mWorldSpaceNormal);
-	Vec3 tangent1 = inWorldSpaceNormal.GetNormalizedPerpendicular();
+	Vec3 tangent1, tangent2;
+	sGetFrictionTangents(inWorldSpaceNormal, tangent1, tangent2);
 	tangent1.StoreFloat3(&constraint->mWorldSpaceTangent1);
-	inWorldSpaceNormal.Cross(tangent1).StoreFloat3(&constraint->mWorldSpaceTangent2);
+	tangent2.StoreFloat3(&constraint->mWorldSpaceTangent2);
 	constraint->mCombinedFriction = inSettings.mCombinedFriction;
 	constraint->mInvInertiaScale1 = inSettings.mInvInertiaScale1;
 	constraint->mInvInertiaScale2 = inSettings.mInvInertiaScale2;
@@ -1552,6 +1553,53 @@ bool ContactConstraintManager::WereBodiesInContact(const BodyID &inBody1ID, cons
 	uint64 key_hash = key.GetHash();
 	const BPKeyValue *kv = read_cache.Find(key, key_hash);
 	return kv != nullptr && kv->GetValue().mFirstCachedManifold != ManifoldMap::cInvalidHandle;
+}
+
+bool ContactConstraintManager::GetContactImpulse(const SubShapeIDPair &inKey, Vec3Arg inWorldSpaceNormal, ContactImpulse &outImpulse) const
+{
+	const ManifoldCache &read_cache = mCache[mCacheWriteIdx ^ 1];
+	JPH_ASSERT(read_cache.IsFinalized(), "Call between simulation steps");
+
+	const MKeyValue *kv = read_cache.Find(inKey, inKey.GetHash());
+	if (kv == nullptr)
+		return false;
+
+	// A manifold whose constraint did not fit in the constraint buffer was created with no contact points and is not linked to its body pair, a CCD manifold has none either
+	const CachedManifold &cm = kv->GetValue();
+	if (cm.mNumContactPoints == 0)
+		return false;
+	JPH_ASSERT((cm.mFlags & (uint16)CachedManifold::EFlags::CCDContact) == 0);
+
+	float non_penetration_lambda = 0.0f;
+	for (uint i = 0; i < cm.mNumContactPoints; ++i)
+		non_penetration_lambda += cm.mContactPoints[i].mNonPenetrationLambda;
+
+	Vec3 t1, t2;
+	sGetFrictionTangents(inWorldSpaceNormal, t1, t2);
+	outImpulse.mLinearImpulse = inWorldSpaceNormal * non_penetration_lambda + t1 * cm.mFrictionLambda[0] + t2 * cm.mFrictionLambda[1];
+	outImpulse.mAngularFrictionImpulse = inWorldSpaceNormal * cm.mAngularFrictionLambda;
+	outImpulse.mNumContactPoints = cm.mNumContactPoints;
+	return true;
+}
+
+uint ContactConstraintManager::GetNumContactManifolds(const BodyID &inBody1ID, const BodyID &inBody2ID) const
+{
+	const ManifoldCache &read_cache = mCache[mCacheWriteIdx ^ 1];
+	JPH_ASSERT(read_cache.IsFinalized(), "Call between simulation steps");
+
+	BodyPair key;
+	if (inBody1ID < inBody2ID)
+		key = BodyPair(inBody1ID, inBody2ID);
+	else
+		key = BodyPair(inBody2ID, inBody1ID);
+	const BPKeyValue *kv = read_cache.Find(key, key.GetHash());
+	if (kv == nullptr)
+		return 0;
+
+	uint num_manifolds = 0;
+	for (uint32 handle = kv->GetValue().mFirstCachedManifold; handle != ManifoldMap::cInvalidHandle; handle = read_cache.FromHandle(handle)->GetValue().mNextWithSameBodyPair)
+		++num_manifolds;
+	return num_manifolds;
 }
 
 template <EMotionType Type1, EMotionType Type2>

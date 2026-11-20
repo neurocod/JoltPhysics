@@ -250,6 +250,15 @@ public:
 	/// - During the ContactListener::OnContactRemoved callback this function can be used to determine if this is the last contact pair between the bodies (function returns false) or if there are other contacts still present (function returns true).
 	bool						WereBodiesInContact(const BodyID &inBody1ID, const BodyID &inBody2ID) const { return mContactManager.WereBodiesInContact(inBody1ID, inBody2ID); }
 
+	/// The impulse the last PhysicsSystem::Update applied through one contact manifold, in world space (see ContactConstraintManager::GetContactImpulse).
+	/// Can be called from any thread when PhysicsSystem::Update is not running.
+	using ContactImpulse = ContactConstraintManager::ContactImpulse;
+	bool						GetContactImpulse(const SubShapeIDPair &inKey, Vec3Arg inWorldSpaceNormal, ContactImpulse &outImpulse) const { return mContactManager.GetContactImpulse(inKey, inWorldSpaceNormal, outImpulse); }
+
+	/// How many contact manifolds the last PhysicsSystem::Update cached for a body pair (see ContactConstraintManager::GetNumContactManifolds).
+	/// Can be called from any thread when PhysicsSystem::Update is not running.
+	uint						GetNumContactManifolds(const BodyID &inBody1ID, const BodyID &inBody2ID) const { return mContactManager.GetNumContactManifolds(inBody1ID, inBody2ID); }
+
 	/// Get the bounding box of all bodies in the physics system.
 	/// Deprecated: Use GetBroadPhaseQuery().GetBounds() instead.
 	AABox						GetBounds() const											{ return mBroadPhase->GetBounds(); }

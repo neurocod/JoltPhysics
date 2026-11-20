@@ -158,6 +158,35 @@ public:
 	/// Uses the read collision cache to determine if 2 bodies are in contact.
 	bool						WereBodiesInContact(const BodyID &inBody1ID, const BodyID &inBody2ID) const;
 
+	/// The impulse the last simulation step applied through one contact manifold, in world space, as received by body 2 of the manifold's key (body 1 received the opposite).
+	/// These are the totals the contact cache keeps to warm start the next step.
+	struct ContactImpulse
+	{
+		Vec3					mLinearImpulse;														///< Non penetration impulse summed over the contact points along the normal, plus the two linear friction impulses along the normal's tangents (sGetFrictionTangents), N s
+		Vec3					mAngularFrictionImpulse;											///< Angular friction impulse about the normal, N m s. The torque that the linear impulses exert about each body's center of mass is not included.
+		uint					mNumContactPoints;													///< Number of contact points of the manifold
+	};
+
+	/// The tangents along which the friction of a contact with normal inWorldSpaceNormal acts, as every contact constraint builds them.
+	static JPH_INLINE void		sGetFrictionTangents(Vec3Arg inWorldSpaceNormal, Vec3 &outTangent1, Vec3 &outTangent2)
+	{
+		outTangent1 = inWorldSpaceNormal.GetNormalizedPerpendicular();
+		outTangent2 = inWorldSpaceNormal.Cross(outTangent1);
+	}
+
+	/// Get the impulse the last simulation step applied through one contact manifold, from the read contact cache: a hash lookup, it neither sorts nor copies the rest of the cache.
+	/// Call between simulation steps.
+	/// @param inKey The manifold as the ContactListener::OnContactAdded / OnContactPersisted callback of the last step reported it: { inBody1.GetID(), inManifold.mSubShapeID1, inBody2.GetID(), inManifold.mSubShapeID2 }.
+	/// @param inWorldSpaceNormal inManifold.mWorldSpaceNormal of that same callback, the normal the solver used. The cache keeps the normal only in body 2's local space and body 2 has moved since, so it cannot be rebuilt from the cache exactly.
+	/// @param outImpulse Receives the impulse when the function returns true.
+	/// @return False when the cache holds no solved manifold under inKey: the contact constraint buffer was full (EPhysicsUpdateError::ContactConstraintsFull) or the contact cache was, or the contact was only found by continuous collision detection (EMotionQuality::LinearCast), whose impulse is applied outside the cache.
+	/// A manifold whose contact was not solved (a sensor, or both inverse mass scales zero) is cached with zero impulses and returns true.
+	bool						GetContactImpulse(const SubShapeIDPair &inKey, Vec3Arg inWorldSpaceNormal, ContactImpulse &outImpulse) const;
+
+	/// Get how many manifolds the last simulation step cached for a body pair (in either order), so that a caller of GetContactImpulse can check that it asked for all of them.
+	/// Call between simulation steps.
+	uint						GetNumContactManifolds(const BodyID &inBody1ID, const BodyID &inBody2ID) const;
+
 	/// Get the number of contact constraints that were found
 	uint32						GetNumConstraints() const											{ return min<uint32>(uint32(mNumConstraintsAndNextConstraintOffset.load(memory_order_relaxed)), mMaxConstraints); }
 
@@ -400,6 +429,9 @@ private:
 
 		/// Before a cache is finalized you can only do Create(), after only Find() or Clear()
 		void					Finalize();
+
+		/// If Finalize() was called since the last Clear()
+		bool					IsFinalized() const							{ return mIsFinalized; }
 #endif
 
 		/// Saving / restoring state for replay
